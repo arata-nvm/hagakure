@@ -1,0 +1,11 @@
+name: hagakure
+version: "0.1.0"
+author: arata-nvm
+about: Yet another Git implementation
+subcommands:
+    - init:
+        about: Initialize a new, empty repository
+        args:
+            - path:
+                help: Where to create a repository
+                default_value: .
