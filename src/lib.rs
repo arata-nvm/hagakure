@@ -1,11 +1,97 @@
+use flate2::read::ZlibDecoder;
 use ini::Ini;
-use std::fs;
-use std::path::{Path, PathBuf};
+use sha1::{Sha1, Digest};
+use std::{
+    fs,
+    str,
+    path::{Path, PathBuf},
+};
+
+trait GitObject {
+    fn serialize(&self) -> Vec<u8>;
+    fn deserialize(&mut self, data: Vec<u8>);
+    fn fmt(&self) -> &[u8];
+}
+
+struct GitBlob {
+    blobdata: Vec<u8>,
+}
+
+impl GitObject for GitBlob {
+    fn serialize(&self) -> Vec<u8> {
+        return self.blobdata.to_owned();
+    }
+
+    fn deserialize(&mut self, data: Vec<u8>) {
+        self.blobdata = data;
+    }
+
+    fn fmt(&self) -> &[u8] {
+        return b"blob";
+    }
+}
+
+enum GitObjects {
+    Commit(),
+    Tree(),
+    Tag(),
+    Blob(),
+}
+
+fn object_read(repo: &GitRepository, sha: &str) -> Result<GitObjects, String> {
+    let path = repo_file(repo, vec!["objects", &sha[0..2], &sha[2..]], false)?;
+
+    let raw_data = fs::read(path).unwrap();
+
+    let decoder = ZlibDecoder::new(raw_data.as_slice());
+    let decoded_data = decoder.get_ref();
+
+    let fmt_end = match decoded_data.iter().position(|&x| x == b' ') {
+        Some(p) => p,
+        None => return Err(format!("Malformed object {}: Cannot read 'fmt'", sha)),
+};
+    let fmt = &decoded_data[..fmt_end];
+
+    let size_end = match decoded_data.iter().position(|&x| x == b'\x00') {
+        Some(p) => p,
+        None => return  Err(format!("Malformed object {}: Cannot read 'size'", sha)),
+    };
+    let size = str::from_utf8(&decoded_data[fmt_end..size_end]).unwrap();
+    let size: usize = size.parse().unwrap();
+    if size != decoded_data.len() - size_end - 1 {
+        return Err(format!("Malformed object {}: bad length", sha));
+    }
+
+    match fmt {
+        b"commit" => {}
+        b"tree" => {}
+        b"tag" => {}
+        b"blob" => {}
+    }
+
+    return Err(format!("Unknown type {:?} for object {}", fmt, sha));
+}
+
+fn object_find<'a>(repo: &GitRepository, name: &'a str, fmt: &str, follow: bool) -> &'a str {
+    return name
+}
+
+fn object_write(obj: &GitObject, actually_write: bool) {
+    let data = obj.serialize();
+    let result = format!("{:?} {}\x00{}", obj.fmt(), data.len(), data);
+    let mut sha1 = Sha1::default();
+    sha1.input(result);
+    let sha = sha1.result();
+
+    if actually_write {
+        let path = repo_file(obj.repo, vec!["objects", sha[0..2], sha[2..]], actually_write);
+    }
+}
 
 pub struct GitRepository<'a> {
-    worktree: &'a Path,
-    gitdir: PathBuf,
-    conf: Ini,
+    pub worktree: &'a Path,
+    pub gitdir: PathBuf,
+    pub conf: Ini,
 }
 
 impl<'a> GitRepository<'a> {
